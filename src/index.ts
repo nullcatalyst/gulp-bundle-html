@@ -6,6 +6,8 @@ import * as PluginError from "plugin-error";
 import * as through2 from "through2";
 import * as _handlebars from "handlebars";
 
+import { stringSearch, stringReplace, createStringGenerator } from "./string";
+
 type Handlebars = typeof _handlebars;
 type TemplateFn = (outputFileName: string, context: any, options?: Handlebars.RuntimeOptions) => void;
 
@@ -31,8 +33,10 @@ interface Options {
     renderTemplate?: (template: TemplateFn, templatePath: string) => void;
 
     baseUrl?: string;
-    bundleCSS?: boolean;
     bundleJS?: boolean;
+    bundleCSS?: boolean;
+    minifyCSSClassNames?: boolean;
+    minifyCSSVarNames?: boolean;
 }
 
 const PLUGIN_NAME = "gulp-bundle-html";
@@ -70,6 +74,225 @@ export default function gulpBundleHtml(options?: Options) {
         }
     });
 
+    async function bundleOutputFile(
+        file: Vinyl,
+        outputFileName: string,
+        template: _handlebars.TemplateDelegate,
+        context: any,
+        templateOptions?: Handlebars.RuntimeOptions,
+    ) {
+        try {
+            let html = template(context, templateOptions);
+            const cssFiles: MapLike<string> = {};
+            const jsFiles: MapLike<string> = {};
+            const pauseFor: Promise<any>[] = [];
+
+            if (options.bundleJS) {
+                const scriptTagRegex = /<script([^>]*)\/>|<script([^>]*)>.*?<\/script[^>]*>/ig;
+                const scriptSrcRegex = /src='([^']*)'|src="([^"]*)"/i;
+
+                stringSearch(html, scriptTagRegex, (fullMatch: string, attribShort: string, attribLong: string) => {
+                    const attributes = attribShort || attribLong;
+
+                    stringSearch(attributes, scriptSrcRegex, (fullMatch: string, singleQuoteSrc: string, doubleQuoteSrc: string) => {
+                        const src = singleQuoteSrc || doubleQuoteSrc;
+                        if (src) {
+                            const filePath = path.resolve(options.baseUrl || file.base, src);
+                            pauseFor.push(
+                                fs.readFile(filePath, "utf8")
+                                    .then((contents: string) => { jsFiles[filePath] = contents; })
+                            );
+                        }
+                    });
+                });
+            }
+
+            if (options.bundleCSS) {
+                const styleTagRegex = /<style([^>]*)\/>|<style([^>]*)>.*?<\/style[^>]*>/ig;
+                const styleSrcRegex = /src='([^']*)'|src="([^"]*)"/i;
+
+                stringSearch(html, styleTagRegex, (fullMatch: string, attribShort: string, attribLong: string) => {
+                    const attributes = attribShort || attribLong;
+
+                    stringSearch(attributes, styleSrcRegex, (fullMatch: string, singleQuoteSrc: string, doubleQuoteSrc: string) => {
+                        const src = singleQuoteSrc || doubleQuoteSrc;
+                        if (src) {
+                            const filePath = path.resolve(options.baseUrl || file.base, src);
+                            pauseFor.push(
+                                fs.readFile(filePath, "utf8")
+                                    .then((contents: string) => { cssFiles[filePath] = contents; })
+                            );
+                        }
+                    });
+                });
+            }
+
+            await Promise.all(pauseFor);
+
+            if (options.minifyCSSClassNames) {
+                const whitespaceRegex = /\s+/;
+                const htmlRegex = /class='(?:\s*-?[_a-z]+[_a-z0-9-]*\s*)+'|class="(?:\s*-?[_a-z]+[_a-z0-9-]*\s*)+"/ig;
+                const cssRegex = /\.-?[_a-z][_a-z0-9-]*\b/ig;
+                const jsRegex = /cssClassName\('(?:\s*-?[_a-z]+[_a-z0-9-]*\s*)+'\)|cssClassName\("(?:\s*-?[_a-z]+[_a-z0-9-]*\s*)+"\)/ig;
+
+                const usageCounts: MapLike<number> = {};
+
+                // HTML
+                stringSearch(html, htmlRegex, (match: string) => {
+                    const classes = match[0].slice("class='".length, -"'".length).trim();
+
+                    const classList = classes.split(/\s+/);
+                    for (const className of classList) {
+                        if (className in usageCounts) {
+                            ++usageCounts[className];
+                        } else {
+                            usageCounts[className] = 1;
+                        }
+                    }
+                });
+
+                // CSS
+                for (const fileName in cssFiles) {
+                    const cssFileContents = cssFiles[fileName];
+                    stringSearch(cssFileContents, cssRegex, (match: string) => {
+                        // Remove the leading period
+                        const className = match.slice(1);
+
+                        // Increment the usage count
+                        if (className in usageCounts) {
+                            ++usageCounts[className];
+                        } else {
+                            usageCounts[className] = 1;
+                        }
+                    });
+                }
+
+                // JS
+                for (const fileName in jsFiles) {
+                    const jsFileContents = jsFiles[fileName];
+                    stringSearch(jsFileContents, jsRegex, (match: string) => {
+                        // Remove the leading period
+                        const className = match.slice("cssClassName('".length, -"')".length).trim();
+
+                        // Increment the usage count
+                        if (className in usageCounts) {
+                            ++usageCounts[className];
+                        } else {
+                            usageCounts[className] = 1;
+                        }
+                    });
+                }
+
+                // This is where the magic happens...
+                // Replace the old CSS class names with new short names, prioritizing the names used most
+                const orderedUsageCount = [...Object.entries(usageCounts)].sort((a, b) => b[1] - a[1]);
+                const replacementNames: {[name: string]: string} = {};
+                const nameGenerator = createStringGenerator();
+                for (const [key, value] of orderedUsageCount) {
+                    replacementNames[key] = nameGenerator.next().value;
+                }
+
+                // HTML
+                html = html.replace(htmlRegex, (match: string) => {
+                    const prefix = match.slice(0, "class='".length);
+                    const postfix = match.slice(-"'".length);
+                    const classes = match.slice("class='".length, -"'".length).trim();
+        
+                    const classList = classes.split(whitespaceRegex)
+                        .map((className: string) => {
+                            if (className in replacementNames) {
+                                return replacementNames[className];
+                            } else {
+                                return className;
+                            }
+                        })
+                        .join(" ");
+        
+                    return `${prefix}${classList}${postfix}`;
+                });
+
+                // CSS
+                for (const fileName in cssFiles) {
+                    cssFiles[fileName] = cssFiles[fileName].replace(cssRegex, (match: string) => {
+                        const className = match.slice(1);
+                        if (className in replacementNames) {
+                            return `.${replacementNames[className]}`;
+                        } else {
+                            return match;
+                        }
+                    })
+                }
+
+                // JS
+                for (const fileName in jsFiles) {
+                    jsFiles[fileName] = jsFiles[fileName].replace(jsRegex, (match: string) => {
+                        const className = match.slice("cssClassName('".length, -"')".length).trim();
+                        if (className in replacementNames) {
+                            return `"${replacementNames[className]}"`;
+                        } else {
+                            return match;
+                        }
+                    })
+                }
+            }
+
+            if (options.bundleJS) {
+                const scriptTagRegex = /<script([^>]*)\/>|<script([^>]*)>.*?<\/script[^>]*>/ig;
+                const scriptSrcRegex = /src='([^']*)'|src="([^"]*)"/i;
+
+                stringReplace(html, scriptTagRegex, (fullMatch: string, attribShort: string, attribLong: string) => {
+                    const attributes = attribShort || attribLong;
+                    let contents: string;
+
+                    stringSearch(attributes, scriptSrcRegex, (fullMatch: string, singleQuoteSrc: string, doubleQuoteSrc: string) => {
+                        const src = singleQuoteSrc || doubleQuoteSrc;
+                        if (src) {
+                            const filePath = path.resolve(options.baseUrl || file.base, src);
+                            contents = jsFiles[filePath];
+                        }
+                    });
+
+                    if (contents) {
+                        return `<script>${contents}</script>`;
+                    } else {
+                        return fullMatch;
+                    }
+                });
+            }
+
+            if (options.bundleCSS) {
+                const styleTagRegex = /<style([^>]*)\/>|<style([^>]*)>.*?<\/style[^>]*>/ig;
+                const styleSrcRegex = /src='([^']*)'|src="([^"]*)"/i;
+
+                stringReplace(html, styleTagRegex, (fullMatch: string, attribShort: string, attribLong: string) => {
+                    const attributes = attribShort || attribLong;
+                    let contents: string;
+
+                    stringSearch(attributes, styleSrcRegex, (fullMatch: string, singleQuoteSrc: string, doubleQuoteSrc: string) => {
+                        const src = singleQuoteSrc || doubleQuoteSrc;
+                        if (src) {
+                            const filePath = path.resolve(options.baseUrl || file.base, src);
+                            contents = cssFiles[filePath];
+                        }
+                    });
+
+                    if (contents) {
+                        return `<style>${contents}</style>`;
+                    } else {
+                        return fullMatch;
+                    }
+                });
+            }
+
+            const newFile = file.clone({ contents: false });
+            newFile.contents = Buffer.from(html);
+            newFile.path = path.resolve(file.base, outputFileName);
+            stream.push(newFile);
+        } catch (error) {
+            stream.emit("error", new PluginError(PLUGIN_NAME, error));
+        }
+    }
+
     // Override the default `stream.end()` method so that we can wait until all of the sources have been read in
     // and then render all of the templates and emit their corresponding files
     const superEnd = stream.end.bind(stream);
@@ -92,55 +315,7 @@ export default function gulpBundleHtml(options?: Options) {
 
                 const template = hbs.compile((file.contents as Buffer).toString("utf8"));
                 const outputFile = (outputFileName: string, context: any, templateOptions?: Handlebars.RuntimeOptions) => {
-                    results.push((async () => {
-                        try {
-                            const newFile = file.clone({
-                                contents: false,
-                            });
-
-                            let result = template(context, templateOptions);
-
-                            if (options.bundleCSS) {
-                                result = await stringReplaceAsync(result, /<style([^>]*)\/>|<style([^>]*)>.*?<\/style[^>]*>/ig, async (fullMatch: string, attribShort: string, attribLong: string) => {
-                                    const attributes = attribShort || attribLong;
-
-                                    const match = attributes.match(/src='([^']*)'|src="([^"]*)"/i);
-                                    if (match) {
-                                        const src = match[1] || match[2];
-                                        if (src) {
-                                            const js = await fs.readFile(path.resolve(options.baseUrl || file.base, src), "utf8");
-                                            return `<style>${js}</style>`;
-                                        }
-                                    }
-
-                                    return fullMatch;
-                                });
-                            }
-
-                            if (options.bundleJS) {
-                                result = await stringReplaceAsync(result, /<script([^>]*)\/>|<script([^>]*)>.*?<\/script[^>]*>/ig, async (fullMatch: string, attribShort: string, attribLong: string) => {
-                                    const attributes = attribShort || attribLong;
-
-                                    const match = attributes.match(/src='([^']*)'|src="([^"]*)"/i);
-                                    if (match) {
-                                        const src = match[1] || match[2];
-                                        if (src) {
-                                            const js = await fs.readFile(path.resolve(options.baseUrl || file.base, src), "utf8");
-                                            return `<script>${js}</script>`;
-                                        }
-                                    }
-
-                                    return fullMatch;
-                                });
-                            }
-
-                            newFile.contents = Buffer.from(result);
-                            newFile.path = path.resolve(file.base, outputFileName);
-                            stream.push(newFile);
-                        } catch (error) {
-                            stream.emit("error", new PluginError(PLUGIN_NAME, error));
-                        }
-                    })());
+                    results.push(bundleOutputFile(file, outputFileName, template, context, templateOptions));
                 };
 
                 const ext = path.extname(file.path);
@@ -158,26 +333,4 @@ export default function gulpBundleHtml(options?: Options) {
     }
 
     return stream;
-}
-
-async function stringReplaceAsync(value: string, regex: RegExp, replacer: (...substrings: string[]) => string | Promise<string>): Promise<string> {
-    const partials: (string | Promise<string>)[] = [];
-
-    let prevIndex = 0;
-    let match: RegExpExecArray;
-    while (match = regex.exec(value)) {
-        // Push any string segments between the matches
-        const prev = value.slice(prevIndex, match.index);
-        partials.push(value.slice(prevIndex, match.index));
-        prevIndex = match.index + match[0].length;
-
-        // Replace the matched portion
-        partials.push(replacer(...match));
-    }
-
-    // Push the last little tidbit of string
-    partials.push(value.slice(prevIndex));
-
-    const all = await Promise.all(partials);
-    return all.join("");
 }

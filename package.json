@@ -20,7 +20,6 @@
     "@types/plugin-error": "^0.1.0",
     "@types/through2": "^2.0.33",
     "@types/vinyl": "^2.0.2",
-    "gulp": "^3.9.1",
     "ts-node": "^7.0.0",
     "typescript": "^2.9.2"
   },
