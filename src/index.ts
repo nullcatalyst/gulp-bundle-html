@@ -239,7 +239,7 @@ export = function gulpBundleHtml(options?: Options) {
                 const scriptTagRegex = /<script([^>]*)\/>|<script([^>]*)>.*?<\/script[^>]*>/ig;
                 const scriptSrcRegex = /src='([^']*)'|src="([^"]*)"/i;
 
-                stringReplace(html, scriptTagRegex, (fullMatch: string, attribShort: string, attribLong: string) => {
+                html = stringReplace(html, scriptTagRegex, (fullMatch: string, attribShort: string, attribLong: string) => {
                     const attributes = attribShort || attribLong;
                     let contents: string;
 
@@ -263,7 +263,7 @@ export = function gulpBundleHtml(options?: Options) {
                 const styleTagRegex = /<style([^>]*)\/>|<style([^>]*)>.*?<\/style[^>]*>/ig;
                 const styleSrcRegex = /src='([^']*)'|src="([^"]*)"/i;
 
-                stringReplace(html, styleTagRegex, (fullMatch: string, attribShort: string, attribLong: string) => {
+                html = stringReplace(html, styleTagRegex, (fullMatch: string, attribShort: string, attribLong: string) => {
                     const attributes = attribShort || attribLong;
                     let contents: string;
 
