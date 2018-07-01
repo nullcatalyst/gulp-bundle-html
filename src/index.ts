@@ -185,7 +185,7 @@ export = function gulpBundleHtml(options?: Options) {
                 // This is where the magic happens...
                 // Replace the old CSS class names with new short names, prioritizing the names used most
                 const orderedUsageCount = [...Object.entries(usageCounts)].sort((a, b) => b[1] - a[1]);
-                const replacementNames: {[name: string]: string} = {};
+                const replacementNames: { [name: string]: string } = {};
                 const nameGenerator = createStringGenerator();
                 for (const [key, value] of orderedUsageCount) {
                     replacementNames[key] = nameGenerator.next().value;
@@ -196,7 +196,7 @@ export = function gulpBundleHtml(options?: Options) {
                     const prefix = match.slice(0, "class='".length);
                     const postfix = match.slice(-"'".length);
                     const classes = match.slice("class='".length, -"'".length).trim();
-        
+
                     const classList = classes.split(whitespaceRegex)
                         .map((className: string) => {
                             if (className in replacementNames) {
@@ -206,7 +206,7 @@ export = function gulpBundleHtml(options?: Options) {
                             }
                         })
                         .join(" ");
-        
+
                     return `${prefix}${classList}${postfix}`;
                 });
 
@@ -342,9 +342,16 @@ function stringSearch(
     regex: RegExp,
     matcher: (...substrings: string[]) => void,
 ): void {
-    let match: RegExpExecArray;
-    while (match = regex.exec(value)) {
-        matcher(...match);
+    if (regex.global) {
+        let match: RegExpExecArray;
+        while (match = regex.exec(value)) {
+            matcher(...match);
+        }
+    } else {
+        let match: RegExpExecArray;
+        if (match = regex.exec(value)) {
+            matcher(...match);
+        }
     }
 }
 
@@ -362,30 +369,52 @@ async function stringReplaceAsync(
     replacer: (...substrings: string[]) => string | Promise<string>,
     callback?: () => void,
 ): Promise<string> {
-    const partials: (string | Promise<string>)[] = [];
+    if (regex.global) {
+        const partials: (string | Promise<string>)[] = [];
 
-    let prevIndex = 0;
-    let match: RegExpExecArray;
-    while (match = regex.exec(value)) {
-        // Push any string segments between the matches
-        const prev = value.slice(prevIndex, match.index);
-        partials.push(value.slice(prevIndex, match.index));
-        prevIndex = match.index + match[0].length;
+        let prevIndex = 0;
+        let match: RegExpExecArray;
+        while (match = regex.exec(value)) {
+            // Push any string segments between the matches
+            const prev = value.slice(prevIndex, match.index);
+            partials.push(value.slice(prevIndex, match.index));
+            prevIndex = match.index + match[0].length;
 
-        // Replace the matched portion
-        partials.push(replacer(...match));
+            // Replace the matched portion
+            partials.push(replacer(...match));
+        }
+
+        // Push the last little tidbit of string
+        partials.push(value.slice(prevIndex));
+
+        // Allow some additional work to be done (synchronously) now that all of the matches have been found
+        if (callback) {
+            callback();
+        }
+
+        const all = await Promise.all(partials);
+        return all.join("");
+    } else {
+        const partials: (string | Promise<string>)[] = [];
+
+        let prevIndex = 0;
+        let match: RegExpExecArray;
+        if (match = regex.exec(value)) {
+            // Push any string segments between the matches
+            const before = value.slice(prevIndex, match.index);
+            const after = value.slice(match.index + match[0].length);
+
+            // Replace the matched portion
+            value = before + (await replacer(...match)) + after;
+        }
+
+        // Allow some additional work to be done (synchronously) now that all of the matches have been found
+        if (callback) {
+            callback();
+        }
+
+        return value;
     }
-
-    // Push the last little tidbit of string
-    partials.push(value.slice(prevIndex));
-
-    // Allow some additional work to be done (synchronously) now that all of the matches have been found
-    if (callback) {
-        callback();
-    }
-
-    const all = await Promise.all(partials);
-    return all.join("");
 }
 
 function* createStringGenerator() {
