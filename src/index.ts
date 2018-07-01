@@ -33,10 +33,10 @@ interface Options {
     renderTemplate?: (template: TemplateFn, templatePath: string) => void;
 
     baseUrl?: string;
-    bundleJS?: boolean;
-    bundleCSS?: boolean;
-    minifyCSSClassNames?: boolean;
-    minifyCSSVarNames?: boolean;
+    bundleJs?: boolean;
+    bundleCss?: boolean;
+    minifyCssClassNames?: boolean;
+    minifyCssVarNames?: boolean;
 }
 
 const PLUGIN_NAME = "gulp-bundle-html";
@@ -87,7 +87,7 @@ export default function gulpBundleHtml(options?: Options) {
             const jsFiles: MapLike<string> = {};
             const pauseFor: Promise<any>[] = [];
 
-            if (options.bundleJS) {
+            if (options.bundleJs) {
                 const scriptTagRegex = /<script([^>]*)\/>|<script([^>]*)>.*?<\/script[^>]*>/ig;
                 const scriptSrcRegex = /src='([^']*)'|src="([^"]*)"/i;
 
@@ -107,7 +107,7 @@ export default function gulpBundleHtml(options?: Options) {
                 });
             }
 
-            if (options.bundleCSS) {
+            if (options.bundleCss) {
                 const styleTagRegex = /<style([^>]*)\/>|<style([^>]*)>.*?<\/style[^>]*>/ig;
                 const styleSrcRegex = /src='([^']*)'|src="([^"]*)"/i;
 
@@ -129,7 +129,7 @@ export default function gulpBundleHtml(options?: Options) {
 
             await Promise.all(pauseFor);
 
-            if (options.minifyCSSClassNames) {
+            if (options.minifyCssClassNames) {
                 const whitespaceRegex = /\s+/;
                 const htmlRegex = /class='(?:\s*-?[_a-z]+[_a-z0-9-]*\s*)+'|class="(?:\s*-?[_a-z]+[_a-z0-9-]*\s*)+"/ig;
                 const cssRegex = /\.-?[_a-z][_a-z0-9-]*\b/ig;
@@ -236,7 +236,7 @@ export default function gulpBundleHtml(options?: Options) {
                 }
             }
 
-            if (options.bundleJS) {
+            if (options.bundleJs) {
                 const scriptTagRegex = /<script([^>]*)\/>|<script([^>]*)>.*?<\/script[^>]*>/ig;
                 const scriptSrcRegex = /src='([^']*)'|src="([^"]*)"/i;
 
@@ -260,7 +260,7 @@ export default function gulpBundleHtml(options?: Options) {
                 });
             }
 
-            if (options.bundleCSS) {
+            if (options.bundleCss) {
                 const styleTagRegex = /<style([^>]*)\/>|<style([^>]*)>.*?<\/style[^>]*>/ig;
                 const styleSrcRegex = /src='([^']*)'|src="([^"]*)"/i;
 
