@@ -189,6 +189,10 @@ export = function gulpBundleHtml(options?: Options) {
                 const nameGenerator = createStringGenerator();
                 for (const [key, value] of orderedUsageCount) {
                     replacementNames[key] = nameGenerator.next().value;
+
+                    if (value <= 1) {
+                        console.warn(`${PLUGIN_NAME}: warning, css class "${key}" is only ever used once, consider removing`);
+                    }
                 }
 
                 // HTML
