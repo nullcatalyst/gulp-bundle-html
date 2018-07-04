@@ -28,7 +28,7 @@ interface Options {
      * The default is to simply render the handlebars template with an empty context `{}`
      * with the output file name left the same as the input, albeit changing the extension to `".html"`.
      */
-    renderTemplate?: (template: TemplateFn, templatePath: string) => void;
+    renderTemplate?: (template: TemplateFn, templatePath: string, done?: (error?: Error) => void) => void;
 
     baseUrl?: string;
     bundleJs?: boolean;
@@ -320,7 +320,36 @@ export = function gulpBundleHtml(options?: Options) {
                 const ext = path.extname(file.path);
                 const name = file.relative.slice(0, -ext.length);
                 if (options.renderTemplate) {
-                    options.renderTemplate(outputFile, name);
+                    if (options.renderTemplate.length === 2) {
+                        // If the `renderTemplate` function only takes 2 parameters,
+                        // then assume that it is running synchronously
+                        options.renderTemplate(outputFile, name);
+                    } else {
+                        // Idealy, if the `renderTemplate` function does not take 2 parameters, then it should take 3.
+                        // The third parameter is a function to let us know that it is done.
+                        // This allows asynchronously loading data for a given template.
+
+                        const subresults: Promise<any>[] = [];
+                        const subOutputFile = (outputFileName: string, context: any, templateOptions?: Handlebars.RuntimeOptions) => {
+                            subresults.push(bundleOutputFile(file, outputFileName, template, context, templateOptions));
+                        };
+
+                        let resolve: (chain: Promise<{}>) => void;
+                        let reject: (error: Error) => void;
+                        const promise = new Promise((_resolve, _reject) => {
+                            resolve = _resolve;
+                            reject = _reject;
+                        });
+                        results.push(promise);
+
+                        options.renderTemplate(subOutputFile, name, (error?: Error) => {
+                            if (error) {
+                                reject(error);
+                            } else {
+                                resolve(Promise.all(subresults));
+                            }
+                        });
+                    }
                 } else {
                     outputFile(name + ".html", {});
                 }
