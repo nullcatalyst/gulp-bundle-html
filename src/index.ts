@@ -129,7 +129,7 @@ export = function gulpBundleHtml(options?: Options) {
             await Promise.all(pauseFor);
 
             if (options.minifyCssClassNames) {
-                const whitespaceRegex = /\s+/;
+                const whitespaceRegex = /\s+/g;
                 const htmlRegex = /class='(?:\s*-?[_a-z]+[_a-z0-9-]*\s*)+'|class="(?:\s*-?[_a-z]+[_a-z0-9-]*\s*)+"/ig;
                 const cssRegex = /\.-?[_a-z][_a-z0-9-]*\b/ig;
                 const jsRegex = /cssClassName\('(?:\s*-?[_a-z]+[_a-z0-9-]*\s*)+'\)|cssClassName\("(?:\s*-?[_a-z]+[_a-z0-9-]*\s*)+"\)/ig;
@@ -138,9 +138,9 @@ export = function gulpBundleHtml(options?: Options) {
 
                 // HTML
                 stringSearch(html, htmlRegex, (match: string) => {
-                    const classes = match[0].slice("class='".length, -"'".length).trim();
+                    const classes = match.slice("class='".length, -"'".length).trim();
 
-                    const classList = classes.split(/\s+/);
+                    const classList = classes.split(whitespaceRegex);
                     for (const className of classList) {
                         if (className in usageCounts) {
                             ++usageCounts[className];
