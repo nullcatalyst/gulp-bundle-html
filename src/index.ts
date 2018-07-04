@@ -96,7 +96,7 @@ export = function gulpBundleHtml(options?: Options) {
                     stringSearch(attributes, scriptSrcRegex, (fullMatch: string, singleQuoteSrc: string, doubleQuoteSrc: string) => {
                         const src = singleQuoteSrc || doubleQuoteSrc;
                         if (src) {
-                            const filePath = path.resolve(options.baseUrl || file.base, src);
+                            const filePath = path.resolve(options.baseUrl || file.base, src.startsWith("/") ? src.slice(1) : src);
                             pauseFor.push(
                                 fs.readFile(filePath, "utf8")
                                     .then((contents: string) => { jsFiles[filePath] = contents; })
@@ -116,7 +116,7 @@ export = function gulpBundleHtml(options?: Options) {
                     stringSearch(attributes, styleSrcRegex, (fullMatch: string, singleQuoteSrc: string, doubleQuoteSrc: string) => {
                         const src = singleQuoteSrc || doubleQuoteSrc;
                         if (src) {
-                            const filePath = path.resolve(options.baseUrl || file.base, src);
+                            const filePath = path.resolve(options.baseUrl || file.base, src.startsWith("/") ? src.slice(1) : src);
                             pauseFor.push(
                                 fs.readFile(filePath, "utf8")
                                     .then((contents: string) => { cssFiles[filePath] = contents; })
@@ -246,7 +246,7 @@ export = function gulpBundleHtml(options?: Options) {
                     stringSearch(attributes, scriptSrcRegex, (fullMatch: string, singleQuoteSrc: string, doubleQuoteSrc: string) => {
                         const src = singleQuoteSrc || doubleQuoteSrc;
                         if (src) {
-                            const filePath = path.resolve(options.baseUrl || file.base, src);
+                            const filePath = path.resolve(options.baseUrl || file.base, src.startsWith("/") ? src.slice(1) : src);
                             contents = jsFiles[filePath];
                         }
                     });
@@ -270,7 +270,7 @@ export = function gulpBundleHtml(options?: Options) {
                     stringSearch(attributes, styleSrcRegex, (fullMatch: string, singleQuoteSrc: string, doubleQuoteSrc: string) => {
                         const src = singleQuoteSrc || doubleQuoteSrc;
                         if (src) {
-                            const filePath = path.resolve(options.baseUrl || file.base, src);
+                            const filePath = path.resolve(options.baseUrl || file.base, src.startsWith("/") ? src.slice(1) : src);
                             contents = cssFiles[filePath];
                         }
                     });
