@@ -35,6 +35,7 @@ interface Options {
     bundleCss?: boolean;
     minifyCssClassNames?: boolean;
     minifyCssVarNames?: boolean;
+    cssClassIgnoreList?: string[];
 }
 
 const PLUGIN_NAME = "gulp-bundle-html";
@@ -43,6 +44,7 @@ const PLUGIN_DEFAULTS = {
     bundleJs: false,
     bundleCss: false,
     minifyCssClassNames: false,
+    cssClassIgnoreList: [],
 };
 
 // Reusable Regex
@@ -143,17 +145,26 @@ export = function gulpBundleHtml(options?: Options) {
             if (options.minifyCssClassNames) {
                 const usageCounts: MapLike<number> = {};
 
+                function addCssClass(className: string) {
+                    // Check if this is a css class that should not be modified
+                    if (options.cssClassIgnoreList && options.cssClassIgnoreList.indexOf(className) >= 0) {
+                        return;
+                    }
+
+                    if (className in usageCounts) {
+                        ++usageCounts[className];
+                    } else {
+                        usageCounts[className] = 1;
+                    }
+                }
+
                 // HTML
                 stringSearch(html, htmlClassRegex, (match: string) => {
                     const classes = match.slice("class='".length, -"'".length).trim();
 
                     const classList = classes.split(wsRegex);
                     for (const className of classList) {
-                        if (className in usageCounts) {
-                            ++usageCounts[className];
-                        } else {
-                            usageCounts[className] = 1;
-                        }
+                        addCssClass(className);
                     }
                 });
 
@@ -163,13 +174,7 @@ export = function gulpBundleHtml(options?: Options) {
                     stringSearch(cssFileContents, cssClassRegex, (match: string) => {
                         // Remove the leading period
                         const className = match.slice(1);
-
-                        // Increment the usage count
-                        if (className in usageCounts) {
-                            ++usageCounts[className];
-                        } else {
-                            usageCounts[className] = 1;
-                        }
+                        addCssClass(className);
                     });
                 }
 
@@ -179,13 +184,7 @@ export = function gulpBundleHtml(options?: Options) {
                     stringSearch(jsFileContents, jsClassRegex, (match: string) => {
                         // Remove the leading period
                         const className = match.slice("cssClassName('".length, -"')".length).trim();
-
-                        // Increment the usage count
-                        if (className in usageCounts) {
-                            ++usageCounts[className];
-                        } else {
-                            usageCounts[className] = 1;
-                        }
+                        addCssClass(className);
                     });
                 }
 
