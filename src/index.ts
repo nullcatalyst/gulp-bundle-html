@@ -45,6 +45,19 @@ const PLUGIN_DEFAULTS = {
     minifyCssClassNames: false,
 };
 
+// Reusable Regex
+const jsTagRegex = /<script([^>]*)\/>|<script([^>]*)>.*?<\/script[^>]*>/ig;
+const jsSrcRegex = /src='([^']*)'|src="([^"]*)"/i;
+
+const cssTagRegex = /<link([^>]*)>/ig;
+const cssRelRegex = /rel='stylesheet'|rel="stylesheet"/i;
+const cssSrcRegex = /href='([^']*)'|href="([^"]*)"/i;
+
+const wsRegex = /\s+/g;
+const htmlClassRegex = /class='(?:\s*-?[_a-z]+[_a-z0-9-]*\s*)+'|class="(?:\s*-?[_a-z]+[_a-z0-9-]*\s*)+"/ig;
+const cssClassRegex = /\.-?[_a-z][_a-z0-9-]*\b/ig;
+const jsClassRegex = /cssClassName\('(?:\s*-?[_a-z]+[_a-z0-9-]*\s*)+'\)|cssClassName\("(?:\s*-?[_a-z]+[_a-z0-9-]*\s*)+"\)/ig;
+
 export = function gulpBundleHtml(options?: Options) {
     options = Object.assign({}, PLUGIN_DEFAULTS, options);
     const partials: MapLike<string> = {};
@@ -87,13 +100,10 @@ export = function gulpBundleHtml(options?: Options) {
             const pauseFor: Promise<any>[] = [];
 
             if (options.bundleJs) {
-                const scriptTagRegex = /<script([^>]*)\/>|<script([^>]*)>.*?<\/script[^>]*>/ig;
-                const scriptSrcRegex = /src='([^']*)'|src="([^"]*)"/i;
-
-                stringSearch(html, scriptTagRegex, (fullMatch: string, attribShort: string, attribLong: string) => {
+                stringSearch(html, jsTagRegex, (fullMatch: string, attribShort: string, attribLong: string) => {
                     const attributes = attribShort || attribLong;
 
-                    stringSearch(attributes, scriptSrcRegex, (fullMatch: string, singleQuoteSrc: string, doubleQuoteSrc: string) => {
+                    stringSearch(attributes, jsSrcRegex, (fullMatch: string, singleQuoteSrc: string, doubleQuoteSrc: string) => {
                         const src = singleQuoteSrc || doubleQuoteSrc;
                         if (src) {
                             const filePath = path.resolve(options.baseUrl || file.base, src.startsWith("/") ? src.slice(1) : src);
@@ -107,13 +117,15 @@ export = function gulpBundleHtml(options?: Options) {
             }
 
             if (options.bundleCss) {
-                const styleTagRegex = /<style([^>]*)\/>|<style([^>]*)>.*?<\/style[^>]*>/ig;
-                const styleSrcRegex = /src='([^']*)'|src="([^"]*)"/i;
-
-                stringSearch(html, styleTagRegex, (fullMatch: string, attribShort: string, attribLong: string) => {
+                stringSearch(html, cssTagRegex, (fullMatch: string, attribShort: string, attribLong: string) => {
                     const attributes = attribShort || attribLong;
 
-                    stringSearch(attributes, styleSrcRegex, (fullMatch: string, singleQuoteSrc: string, doubleQuoteSrc: string) => {
+                    // if the <link> tag does not contain rel="stylesheet", then ignore it
+                    if (!cssRelRegex.test(attributes)) {
+                        return fullMatch;
+                    }
+
+                    stringSearch(attributes, cssSrcRegex, (fullMatch: string, singleQuoteSrc: string, doubleQuoteSrc: string) => {
                         const src = singleQuoteSrc || doubleQuoteSrc;
                         if (src) {
                             const filePath = path.resolve(options.baseUrl || file.base, src.startsWith("/") ? src.slice(1) : src);
@@ -129,18 +141,13 @@ export = function gulpBundleHtml(options?: Options) {
             await Promise.all(pauseFor);
 
             if (options.minifyCssClassNames) {
-                const whitespaceRegex = /\s+/g;
-                const htmlRegex = /class='(?:\s*-?[_a-z]+[_a-z0-9-]*\s*)+'|class="(?:\s*-?[_a-z]+[_a-z0-9-]*\s*)+"/ig;
-                const cssRegex = /\.-?[_a-z][_a-z0-9-]*\b/ig;
-                const jsRegex = /cssClassName\('(?:\s*-?[_a-z]+[_a-z0-9-]*\s*)+'\)|cssClassName\("(?:\s*-?[_a-z]+[_a-z0-9-]*\s*)+"\)/ig;
-
                 const usageCounts: MapLike<number> = {};
 
                 // HTML
-                stringSearch(html, htmlRegex, (match: string) => {
+                stringSearch(html, htmlClassRegex, (match: string) => {
                     const classes = match.slice("class='".length, -"'".length).trim();
 
-                    const classList = classes.split(whitespaceRegex);
+                    const classList = classes.split(wsRegex);
                     for (const className of classList) {
                         if (className in usageCounts) {
                             ++usageCounts[className];
@@ -153,7 +160,7 @@ export = function gulpBundleHtml(options?: Options) {
                 // CSS
                 for (const fileName in cssFiles) {
                     const cssFileContents = cssFiles[fileName];
-                    stringSearch(cssFileContents, cssRegex, (match: string) => {
+                    stringSearch(cssFileContents, cssClassRegex, (match: string) => {
                         // Remove the leading period
                         const className = match.slice(1);
 
@@ -169,7 +176,7 @@ export = function gulpBundleHtml(options?: Options) {
                 // JS
                 for (const fileName in jsFiles) {
                     const jsFileContents = jsFiles[fileName];
-                    stringSearch(jsFileContents, jsRegex, (match: string) => {
+                    stringSearch(jsFileContents, jsClassRegex, (match: string) => {
                         // Remove the leading period
                         const className = match.slice("cssClassName('".length, -"')".length).trim();
 
@@ -196,12 +203,12 @@ export = function gulpBundleHtml(options?: Options) {
                 }
 
                 // HTML
-                html = html.replace(htmlRegex, (match: string) => {
+                html = html.replace(htmlClassRegex, (match: string) => {
                     const prefix = match.slice(0, "class='".length);
                     const postfix = match.slice(-"'".length);
                     const classes = match.slice("class='".length, -"'".length).trim();
 
-                    const classList = classes.split(whitespaceRegex)
+                    const classList = classes.split(wsRegex)
                         .map((className: string) => {
                             if (className in replacementNames) {
                                 return replacementNames[className];
@@ -216,7 +223,7 @@ export = function gulpBundleHtml(options?: Options) {
 
                 // CSS
                 for (const fileName in cssFiles) {
-                    cssFiles[fileName] = cssFiles[fileName].replace(cssRegex, (match: string) => {
+                    cssFiles[fileName] = cssFiles[fileName].replace(cssClassRegex, (match: string) => {
                         const className = match.slice(1);
                         if (className in replacementNames) {
                             return `.${replacementNames[className]}`;
@@ -228,7 +235,7 @@ export = function gulpBundleHtml(options?: Options) {
 
                 // JS
                 for (const fileName in jsFiles) {
-                    jsFiles[fileName] = jsFiles[fileName].replace(jsRegex, (match: string) => {
+                    jsFiles[fileName] = jsFiles[fileName].replace(jsClassRegex, (match: string) => {
                         const className = match.slice("cssClassName('".length, -"')".length).trim();
                         if (className in replacementNames) {
                             return `"${replacementNames[className]}"`;
@@ -240,14 +247,11 @@ export = function gulpBundleHtml(options?: Options) {
             }
 
             if (options.bundleJs) {
-                const scriptTagRegex = /<script([^>]*)\/>|<script([^>]*)>.*?<\/script[^>]*>/ig;
-                const scriptSrcRegex = /src='([^']*)'|src="([^"]*)"/i;
-
-                html = stringReplace(html, scriptTagRegex, (fullMatch: string, attribShort: string, attribLong: string) => {
+                html = stringReplace(html, jsTagRegex, (fullMatch: string, attribShort: string, attribLong: string) => {
                     const attributes = attribShort || attribLong;
                     let contents: string;
 
-                    stringSearch(attributes, scriptSrcRegex, (fullMatch: string, singleQuoteSrc: string, doubleQuoteSrc: string) => {
+                    stringSearch(attributes, jsSrcRegex, (fullMatch: string, singleQuoteSrc: string, doubleQuoteSrc: string) => {
                         const src = singleQuoteSrc || doubleQuoteSrc;
                         if (src) {
                             const filePath = path.resolve(options.baseUrl || file.base, src.startsWith("/") ? src.slice(1) : src);
@@ -264,14 +268,16 @@ export = function gulpBundleHtml(options?: Options) {
             }
 
             if (options.bundleCss) {
-                const styleTagRegex = /<style([^>]*)\/>|<style([^>]*)>.*?<\/style[^>]*>/ig;
-                const styleSrcRegex = /src='([^']*)'|src="([^"]*)"/i;
-
-                html = stringReplace(html, styleTagRegex, (fullMatch: string, attribShort: string, attribLong: string) => {
+                html = stringReplace(html, cssTagRegex, (fullMatch: string, attribShort: string, attribLong: string) => {
                     const attributes = attribShort || attribLong;
                     let contents: string;
 
-                    stringSearch(attributes, styleSrcRegex, (fullMatch: string, singleQuoteSrc: string, doubleQuoteSrc: string) => {
+                    // if the <link> tag does not contain rel="stylesheet", then don't replace it
+                    if (!cssRelRegex.test(attributes)) {
+                        return fullMatch;
+                    }
+
+                    stringSearch(attributes, cssSrcRegex, (fullMatch: string, singleQuoteSrc: string, doubleQuoteSrc: string) => {
                         const src = singleQuoteSrc || doubleQuoteSrc;
                         if (src) {
                             const filePath = path.resolve(options.baseUrl || file.base, src.startsWith("/") ? src.slice(1) : src);
