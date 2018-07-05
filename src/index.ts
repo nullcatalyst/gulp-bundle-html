@@ -101,7 +101,7 @@ export = function gulpBundleHtml(options?: Options) {
             const jsFiles: MapLike<string> = {};
             const pauseFor: Promise<any>[] = [];
 
-            if (options.bundleJs) {
+            if (options.bundleJs || options.minifyCssClassNames) {
                 stringSearch(html, jsTagRegex, (fullMatch: string, attribShort: string, attribLong: string) => {
                     const attributes = attribShort || attribLong;
 
@@ -118,7 +118,7 @@ export = function gulpBundleHtml(options?: Options) {
                 });
             }
 
-            if (options.bundleCss) {
+            if (options.bundleCss || options.minifyCssClassNames) {
                 stringSearch(html, cssTagRegex, (fullMatch: string, attribShort: string, attribLong: string) => {
                     const attributes = attribShort || attribLong;
 
@@ -141,6 +141,7 @@ export = function gulpBundleHtml(options?: Options) {
             }
 
             await Promise.all(pauseFor);
+            pauseFor.length = 0;
 
             if (options.minifyCssClassNames) {
                 const usageCounts: MapLike<number> = {};
@@ -264,6 +265,11 @@ export = function gulpBundleHtml(options?: Options) {
                         return fullMatch;
                     }
                 });
+            } else if (options.minifyCssClassNames) {
+                // Update the files with the minified source code
+                for (let filePath in jsFiles) {
+                    pauseFor.push(fs.writeFile(filePath, jsFiles[filePath], "utf8"));
+                }
             }
 
             if (options.bundleCss) {
@@ -290,7 +296,15 @@ export = function gulpBundleHtml(options?: Options) {
                         return fullMatch;
                     }
                 });
+            } else if (options.minifyCssClassNames) {
+                // Update the files with the minified source code
+                for (let filePath in cssFiles) {
+                    pauseFor.push(fs.writeFile(filePath, cssFiles[filePath], "utf8"));
+                }
             }
+
+            await Promise.all(pauseFor);
+            pauseFor.length = 0;
 
             const newFile = file.clone({ contents: false });
             newFile.contents = Buffer.from(html);
