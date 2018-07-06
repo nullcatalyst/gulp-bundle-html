@@ -56,6 +56,7 @@ const cssRelRegex = /rel='stylesheet'|rel="stylesheet"/i;
 const cssSrcRegex = /href='([^']*)'|href="([^"]*)"/i;
 
 const wsRegex = /\s+/g;
+const absoluteUrlRegex = /^(?:[a-z]+:)?\/\//i;
 const htmlClassRegex = /class='(?:\s*-?[_a-z]+[_a-z0-9-]*\s*)+'|class="(?:\s*-?[_a-z]+[_a-z0-9-]*\s*)+"/ig;
 const cssClassRegex = /\.-?[_a-z][_a-z0-9-]*\b/ig;
 const jsClassRegex = /cssClassName\('(?:\s*-?[_a-z]+[_a-z0-9-]*\s*)+'\)|cssClassName\("(?:\s*-?[_a-z]+[_a-z0-9-]*\s*)+"\)/ig;
@@ -107,7 +108,7 @@ export = function gulpBundleHtml(options?: Options) {
 
                     stringSearch(attributes, jsSrcRegex, (fullMatch: string, singleQuoteSrc: string, doubleQuoteSrc: string) => {
                         const src = singleQuoteSrc || doubleQuoteSrc;
-                        if (src) {
+                        if (src && !absoluteUrlRegex.test(src)) {
                             const filePath = path.resolve(options.baseUrl || file.base, src.startsWith("/") ? src.slice(1) : src);
                             pauseFor.push(
                                 fs.readFile(filePath, "utf8")
@@ -129,7 +130,7 @@ export = function gulpBundleHtml(options?: Options) {
 
                     stringSearch(attributes, cssSrcRegex, (fullMatch: string, singleQuoteSrc: string, doubleQuoteSrc: string) => {
                         const src = singleQuoteSrc || doubleQuoteSrc;
-                        if (src) {
+                        if (src && !absoluteUrlRegex.test(src)) {
                             const filePath = path.resolve(options.baseUrl || file.base, src.startsWith("/") ? src.slice(1) : src);
                             pauseFor.push(
                                 fs.readFile(filePath, "utf8")
