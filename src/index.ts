@@ -263,7 +263,8 @@ export = function gulpBundleHtml(options?: Options) {
 
                     
                     if (contents) {
-                        const updatedAttributes = attributes.replace(jsSrcRegex, "");
+                        let updatedAttributes = attributes.replace(jsSrcRegex, "");
+                        if (updatedAttributes.endsWith("/")) updatedAttributes = updatedAttributes.slice(0, -1);
                         return `<script${updatedAttributes}>${contents}</script>`;
                     } else {
                         return fullMatch;
@@ -295,7 +296,8 @@ export = function gulpBundleHtml(options?: Options) {
                     });
 
                     if (contents) {
-                        const updatedAttributes = attributes.replace(cssSrcRegex, "").replace(cssRelRegex, "");
+                        let updatedAttributes = attributes.replace(cssSrcRegex, "").replace(cssRelRegex, "");
+                        if (updatedAttributes.endsWith("/")) updatedAttributes = updatedAttributes.slice(0, -1);
                         return `<style${updatedAttributes}>${contents}</style>`;
                     } else {
                         return fullMatch;
