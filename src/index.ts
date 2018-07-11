@@ -222,6 +222,17 @@ export = function gulpBundleHtml(options?: Options) {
 
                     return `${prefix}${classList}${postfix}`;
                 });
+                html = html.replace(jsClassRegex, (match: string) => {
+                    // Sometimes there is inline javascript kept in some of the HTML attributes,
+                    // this allows us to handle those as well
+                    const className = match.slice("cssClassName('".length, -"')".length).trim();
+                    const quote = match.substr("cssClassName(".length, 1);
+                    if (className in replacementNames) {
+                        return `${quote}${replacementNames[className]}${quote}`;
+                    } else {
+                        return match;
+                    }
+                });
 
                 // CSS
                 for (const fileName in cssFiles) {
@@ -232,19 +243,20 @@ export = function gulpBundleHtml(options?: Options) {
                         } else {
                             return match;
                         }
-                    })
+                    });
                 }
 
                 // JS
                 for (const fileName in jsFiles) {
                     jsFiles[fileName] = jsFiles[fileName].replace(jsClassRegex, (match: string) => {
                         const className = match.slice("cssClassName('".length, -"')".length).trim();
+                        const quote = match.substr("cssClassName(".length, 1);
                         if (className in replacementNames) {
-                            return `"${replacementNames[className]}"`;
+                            return `${quote}${replacementNames[className]}${quote}`;
                         } else {
                             return match;
                         }
-                    })
+                    });
                 }
             }
 
