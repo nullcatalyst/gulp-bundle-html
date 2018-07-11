@@ -50,6 +50,7 @@ const PLUGIN_DEFAULTS = {
 // Reusable Regex
 const jsTagRegex = /<script([^>]*)\/>|<script([^>]*)>.*?<\/script[^>]*>/ig;
 const jsSrcRegex = /src='([^']*)'|src="([^"]*)"/i;
+// const xmlAttribRegex = /(?<!<)\b[a-z0-9_]+\s*(?:=\s*(?:'[^']*'|"[^"]*"))?/i;
 
 const cssTagRegex = /<link([^>]*)>/ig;
 const cssRelRegex = /rel='stylesheet'|rel="stylesheet"/i;
@@ -260,8 +261,10 @@ export = function gulpBundleHtml(options?: Options) {
                         }
                     });
 
+                    
                     if (contents) {
-                        return `<script>${contents}</script>`;
+                        const updatedAttributes = attributes.replace(jsSrcRegex, "");
+                        return `<script${updatedAttributes}>${contents}</script>`;
                     } else {
                         return fullMatch;
                     }
@@ -292,7 +295,8 @@ export = function gulpBundleHtml(options?: Options) {
                     });
 
                     if (contents) {
-                        return `<style>${contents}</style>`;
+                        const updatedAttributes = attributes.replace(cssSrcRegex, "").replace(cssRelRegex, "");
+                        return `<style${updatedAttributes}>${contents}</style>`;
                     } else {
                         return fullMatch;
                     }
