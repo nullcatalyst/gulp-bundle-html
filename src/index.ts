@@ -60,7 +60,7 @@ const wsRegex = /\s+/g;
 const absoluteUrlRegex = /^(?:[a-z]+:)?\/\//i;
 const htmlClassRegex = /class='(?:\s*-?[_a-z]+[_a-z0-9-]*\s*)+'|class="(?:\s*-?[_a-z]+[_a-z0-9-]*\s*)+"/ig;
 const cssClassRegex = /\.-?[_a-z][_a-z0-9-]*\b/ig;
-const jsClassRegex = /cssClassName\('(?:\s*-?[_a-z]+[_a-z0-9-]*\s*)+'\)|cssClassName\("(?:\s*-?[_a-z]+[_a-z0-9-]*\s*)+"\)/ig;
+const jsClassRegex = /cssClassName\(([^\)]+)\)/ig;
 
 export = function gulpBundleHtml(options?: Options) {
     options = Object.assign({}, PLUGIN_DEFAULTS, options);
@@ -170,24 +170,25 @@ export = function gulpBundleHtml(options?: Options) {
                         addCssClass(className);
                     }
                 });
+                stringSearch(html, jsClassRegex, (match: string, param: string) => {
+                    addCssClass(parseCssClassName(param));
+                });
 
                 // CSS
                 for (const fileName in cssFiles) {
                     const cssFileContents = cssFiles[fileName];
                     stringSearch(cssFileContents, cssClassRegex, (match: string) => {
                         // Remove the leading period
-                        const className = match.slice(1);
-                        addCssClass(className);
+                        addCssClass(match.slice(1));
                     });
                 }
 
                 // JS
                 for (const fileName in jsFiles) {
                     const jsFileContents = jsFiles[fileName];
-                    stringSearch(jsFileContents, jsClassRegex, (match: string) => {
-                        // Remove the leading period
-                        const className = match.slice("cssClassName('".length, -"')".length).trim();
-                        addCssClass(className);
+                    stringSearch(jsFileContents, jsClassRegex, (match: string, param: string) => {
+                        // Remove the surrounding `cssClassName(...)`
+                        addCssClass(parseCssClassName(param));
                     });
                 }
 
@@ -222,16 +223,10 @@ export = function gulpBundleHtml(options?: Options) {
 
                     return `${prefix}${classList}${postfix}`;
                 });
-                html = html.replace(jsClassRegex, (match: string) => {
+                html = html.replace(jsClassRegex, (match: string, param: string) => {
                     // Sometimes there is inline javascript kept in some of the HTML attributes,
                     // this allows us to handle those as well
-                    const className = match.slice("cssClassName('".length, -"')".length).trim();
-                    const quote = match.substr("cssClassName(".length, 1);
-                    if (className in replacementNames) {
-                        return `${quote}${replacementNames[className]}${quote}`;
-                    } else {
-                        return match;
-                    }
+                    return parseCssClassName(param, replacementNames);
                 });
 
                 // CSS
@@ -248,14 +243,8 @@ export = function gulpBundleHtml(options?: Options) {
 
                 // JS
                 for (const fileName in jsFiles) {
-                    jsFiles[fileName] = jsFiles[fileName].replace(jsClassRegex, (match: string) => {
-                        const className = match.slice("cssClassName('".length, -"')".length).trim();
-                        const quote = match.substr("cssClassName(".length, 1);
-                        if (className in replacementNames) {
-                            return `${quote}${replacementNames[className]}${quote}`;
-                        } else {
-                            return match;
-                        }
+                    jsFiles[fileName] = jsFiles[fileName].replace(jsClassRegex, (match: string, param: string) => {
+                        return parseCssClassName(param, replacementNames);
                     });
                 }
             }
@@ -403,6 +392,34 @@ export = function gulpBundleHtml(options?: Options) {
     }
 
     return stream;
+}
+
+function parseCssClassName(cssClassName: string, replacementNames?: MapLike<string>) {
+    cssClassName = cssClassName.trim();
+
+    if (replacementNames) {
+        if (cssClassName.startsWith("'") || cssClassName.startsWith("\"")) {
+            let className = cssClassName.slice(1, -1);
+
+            if (className in replacementNames) {
+                return `${cssClassName.slice(0, 1)}${replacementNames[className]}${cssClassName.slice(-1)}`;
+            } else {
+                return cssClassName;
+            }
+        } else {
+            if (cssClassName in replacementNames) {
+                return replacementNames[cssClassName];
+            } else {
+                return cssClassName;
+            }
+        }
+    } else {
+        if (cssClassName.startsWith("'") || cssClassName.startsWith("\"")) {
+            return cssClassName.slice(1, -1);
+        } else {
+            return cssClassName;
+        }
+    }
 }
 
 ////////////////////////////////
