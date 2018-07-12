@@ -6,61 +6,11 @@ import * as PluginError from "plugin-error";
 import * as through2 from "through2";
 import * as _handlebars from "handlebars";
 
-type Handlebars = typeof _handlebars;
-type TemplateFn = (outputFileName: string, context: any, options?: Handlebars.RuntimeOptions) => void;
-
-interface MapLike<T> {
-    [id: string]: T;
-}
-
-interface Options {
-    /**
-     * Can be used to disable templating (pass `false`),
-     * or can be used to pass a custom version of the handlebars library.
-     */
-    handlebars?: boolean | Handlebars;
-
-    /**
-     * Allows passing data to the template to render it.
-     * Also allows outputting multiple files from a single template file,
-     * by calling the template function multiple times.
-     * 
-     * The default is to simply render the handlebars template with an empty context `{}`
-     * with the output file name left the same as the input, albeit changing the extension to `".html"`.
-     */
-    renderTemplate?: (template: TemplateFn, templatePath: string, done?: (error?: Error) => void) => void;
-
-    baseUrl?: string;
-    bundleJs?: boolean;
-    bundleCss?: boolean;
-    minifyCssClassNames?: boolean;
-    minifyCssVarNames?: boolean;
-    cssClassIgnoreList?: string[];
-}
-
-const PLUGIN_NAME = "gulp-bundle-html";
-const PLUGIN_DEFAULTS = {
-    handlebars: true,
-    bundleJs: false,
-    bundleCss: false,
-    minifyCssClassNames: false,
-    cssClassIgnoreList: [],
-};
-
-// Reusable Regex
-const jsTagRegex = /<script([^>]*)\/>|<script([^>]*)>.*?<\/script[^>]*>/ig;
-const jsSrcRegex = /src='([^']*)'|src="([^"]*)"/i;
-// const xmlAttribRegex = /(?<!<)\b[a-z0-9_]+\s*(?:=\s*(?:'[^']*'|"[^"]*"))?/i;
-
-const cssTagRegex = /<link([^>]*)>/ig;
-const cssRelRegex = /rel='stylesheet'|rel="stylesheet"/i;
-const cssSrcRegex = /href='([^']*)'|href="([^"]*)"/i;
-
-const wsRegex = /\s+/g;
-const absoluteUrlRegex = /^(?:[a-z]+:)?\/\//i;
-const htmlClassRegex = /class='(?:\s*-?[_a-z]+[_a-z0-9-]*\s*)+'|class="(?:\s*-?[_a-z]+[_a-z0-9-]*\s*)+"/ig;
-const cssClassRegex = /\.-?[_a-z][_a-z0-9-]*\b/ig;
-const jsClassRegex = /cssClassName\(([^\)]+)\)/ig;
+import { MapLike } from "./map-like";
+import { Options, PLUGIN_NAME, PLUGIN_DEFAULTS } from "./options";
+import { bundleCssPrep, bundleCss } from "./bundle-css";
+import { bundleJsPrep, bundleJs } from "./bundle-js";
+import { minifyClassNames } from "./minify-class";
 
 export = function gulpBundleHtml(options?: Options) {
     options = Object.assign({}, PLUGIN_DEFAULTS, options);
@@ -90,6 +40,12 @@ export = function gulpBundleHtml(options?: Options) {
         }
     });
 
+    // Override the default `stream.end()` method so that we can wait until all of the sources have been read in
+    // and then render all of the templates and emit their corresponding files
+    const superEnd = stream.end.bind(stream);
+    stream.end = onEndStream;
+    return stream;
+
     async function bundleOutputFile(
         file: Vinyl,
         outputFileName: string,
@@ -101,218 +57,43 @@ export = function gulpBundleHtml(options?: Options) {
             let html = template(context, templateOptions);
             const cssFiles: MapLike<string> = {};
             const jsFiles: MapLike<string> = {};
-            const pauseFor: Promise<any>[] = [];
+            const promises: Promise<any>[] = [];
 
-            if (options.bundleJs || options.minifyCssClassNames) {
-                stringSearch(html, jsTagRegex, (fullMatch: string, attribShort: string, attribLong: string) => {
-                    const attributes = attribShort || attribLong;
-
-                    stringSearch(attributes, jsSrcRegex, (fullMatch: string, singleQuoteSrc: string, doubleQuoteSrc: string) => {
-                        const src = singleQuoteSrc || doubleQuoteSrc;
-                        if (src && !absoluteUrlRegex.test(src)) {
-                            const filePath = path.resolve(options.baseUrl || file.base, src.startsWith("/") ? src.slice(1) : src);
-                            pauseFor.push(
-                                fs.readFile(filePath, "utf8")
-                                    .then((contents: string) => { jsFiles[filePath] = contents; })
-                            );
-                        }
-                    });
-                });
+            if (options.bundleJs || options.minifyCssClasses) {
+                promises.push(bundleJsPrep(html, jsFiles, options.baseUrl || file.base));
             }
 
-            if (options.bundleCss || options.minifyCssClassNames) {
-                stringSearch(html, cssTagRegex, (fullMatch: string, attribShort: string, attribLong: string) => {
-                    const attributes = attribShort || attribLong;
-
-                    // if the <link> tag does not contain rel="stylesheet", then ignore it
-                    if (!cssRelRegex.test(attributes)) {
-                        return fullMatch;
-                    }
-
-                    stringSearch(attributes, cssSrcRegex, (fullMatch: string, singleQuoteSrc: string, doubleQuoteSrc: string) => {
-                        const src = singleQuoteSrc || doubleQuoteSrc;
-                        if (src && !absoluteUrlRegex.test(src)) {
-                            const filePath = path.resolve(options.baseUrl || file.base, src.startsWith("/") ? src.slice(1) : src);
-                            pauseFor.push(
-                                fs.readFile(filePath, "utf8")
-                                    .then((contents: string) => { cssFiles[filePath] = contents; })
-                            );
-                        }
-                    });
-                });
+            if (options.bundleCss || options.minifyCssClasses) {
+                promises.push(bundleCssPrep(html, cssFiles, options.baseUrl || file.base));
             }
 
-            await Promise.all(pauseFor);
-            pauseFor.length = 0;
+            await Promise.all(promises);
+            promises.length = 0;
 
-            if (options.minifyCssClassNames) {
-                const usageCounts: MapLike<number> = {};
-
-                function addCssClass(className: string) {
-                    // Check if this is a css class that should not be modified
-                    if (options.cssClassIgnoreList && options.cssClassIgnoreList.indexOf(className) >= 0) {
-                        return;
-                    }
-
-                    if (className in usageCounts) {
-                        ++usageCounts[className];
-                    } else {
-                        usageCounts[className] = 1;
-                    }
-                }
-
-                // HTML
-                stringSearch(html, htmlClassRegex, (match: string) => {
-                    const classes = match.slice("class='".length, -"'".length).trim();
-
-                    const classList = classes.split(wsRegex);
-                    for (const className of classList) {
-                        addCssClass(className);
-                    }
-                });
-                stringSearch(html, jsClassRegex, (match: string, param: string) => {
-                    addCssClass(parseCssClassName(param));
-                });
-
-                // CSS
-                for (const fileName in cssFiles) {
-                    const cssFileContents = cssFiles[fileName];
-                    stringSearch(cssFileContents, cssClassRegex, (match: string) => {
-                        // Remove the leading period
-                        addCssClass(match.slice(1));
-                    });
-                }
-
-                // JS
-                for (const fileName in jsFiles) {
-                    const jsFileContents = jsFiles[fileName];
-                    stringSearch(jsFileContents, jsClassRegex, (match: string, param: string) => {
-                        // Remove the surrounding `cssClassName(...)`
-                        addCssClass(parseCssClassName(param));
-                    });
-                }
-
-                // This is where the magic happens...
-                // Replace the old CSS class names with new short names, prioritizing the names used most
-                const orderedUsageCount = [...Object.entries(usageCounts)].sort((a, b) => b[1] - a[1]);
-                const replacementNames: { [name: string]: string } = {};
-                const nameGenerator = createStringGenerator();
-                for (const [key, value] of orderedUsageCount) {
-                    replacementNames[key] = nameGenerator.next().value;
-
-                    if (value <= 1) {
-                        console.warn(`${PLUGIN_NAME}: warning, css class "${key}" is only ever used once, consider removing`);
-                    }
-                }
-
-                // HTML
-                html = html.replace(htmlClassRegex, (match: string) => {
-                    const prefix = match.slice(0, "class='".length);
-                    const postfix = match.slice(-"'".length);
-                    const classes = match.slice("class='".length, -"'".length).trim();
-
-                    const classList = classes.split(wsRegex)
-                        .map((className: string) => {
-                            if (className in replacementNames) {
-                                return replacementNames[className];
-                            } else {
-                                return className;
-                            }
-                        })
-                        .join(" ");
-
-                    return `${prefix}${classList}${postfix}`;
-                });
-                html = html.replace(jsClassRegex, (match: string, param: string) => {
-                    // Sometimes there is inline javascript kept in some of the HTML attributes,
-                    // this allows us to handle those as well
-                    return parseCssClassName(param, replacementNames);
-                });
-
-                // CSS
-                for (const fileName in cssFiles) {
-                    cssFiles[fileName] = cssFiles[fileName].replace(cssClassRegex, (match: string) => {
-                        const className = match.slice(1);
-                        if (className in replacementNames) {
-                            return `.${replacementNames[className]}`;
-                        } else {
-                            return match;
-                        }
-                    });
-                }
-
-                // JS
-                for (const fileName in jsFiles) {
-                    jsFiles[fileName] = jsFiles[fileName].replace(jsClassRegex, (match: string, param: string) => {
-                        return parseCssClassName(param, replacementNames);
-                    });
-                }
+            if (options.minifyCssClasses) {
+                html = minifyClassNames(html, cssFiles, jsFiles, options.classesWhitelist || []);
             }
 
             if (options.bundleJs) {
-                html = stringReplace(html, jsTagRegex, (fullMatch: string, attribShort: string, attribLong: string) => {
-                    const attributes = attribShort || attribLong;
-                    let contents: string;
-
-                    stringSearch(attributes, jsSrcRegex, (fullMatch: string, singleQuoteSrc: string, doubleQuoteSrc: string) => {
-                        const src = singleQuoteSrc || doubleQuoteSrc;
-                        if (src) {
-                            const filePath = path.resolve(options.baseUrl || file.base, src.startsWith("/") ? src.slice(1) : src);
-                            contents = jsFiles[filePath];
-                        }
-                    });
-
-                    
-                    if (contents) {
-                        let updatedAttributes = attributes.replace(jsSrcRegex, "");
-                        if (updatedAttributes.endsWith("/")) updatedAttributes = updatedAttributes.slice(0, -1);
-                        return `<script${updatedAttributes}>${contents}</script>`;
-                    } else {
-                        return fullMatch;
-                    }
-                });
-            } else if (options.minifyCssClassNames) {
+                html = bundleJs(html, jsFiles, options.baseUrl || file.base);
+            } else if (options.minifyCssClasses) {
                 // Update the files with the minified source code
                 for (let filePath in jsFiles) {
-                    pauseFor.push(fs.writeFile(filePath, jsFiles[filePath], "utf8"));
+                    promises.push(fs.writeFile(filePath, jsFiles[filePath], "utf8"));
                 }
             }
 
             if (options.bundleCss) {
-                html = stringReplace(html, cssTagRegex, (fullMatch: string, attribShort: string, attribLong: string) => {
-                    const attributes = attribShort || attribLong;
-                    let contents: string;
-
-                    // if the <link> tag does not contain rel="stylesheet", then don't replace it
-                    if (!cssRelRegex.test(attributes)) {
-                        return fullMatch;
-                    }
-
-                    stringSearch(attributes, cssSrcRegex, (fullMatch: string, singleQuoteSrc: string, doubleQuoteSrc: string) => {
-                        const src = singleQuoteSrc || doubleQuoteSrc;
-                        if (src) {
-                            const filePath = path.resolve(options.baseUrl || file.base, src.startsWith("/") ? src.slice(1) : src);
-                            contents = cssFiles[filePath];
-                        }
-                    });
-
-                    if (contents) {
-                        let updatedAttributes = attributes.replace(cssSrcRegex, "").replace(cssRelRegex, "");
-                        if (updatedAttributes.endsWith("/")) updatedAttributes = updatedAttributes.slice(0, -1);
-                        return `<style${updatedAttributes}>${contents}</style>`;
-                    } else {
-                        return fullMatch;
-                    }
-                });
-            } else if (options.minifyCssClassNames) {
+                html = bundleCss(html, cssFiles, options.baseUrl || file.base);
+            } else if (options.minifyCssClasses) {
                 // Update the files with the minified source code
                 for (let filePath in cssFiles) {
-                    pauseFor.push(fs.writeFile(filePath, cssFiles[filePath], "utf8"));
+                    promises.push(fs.writeFile(filePath, cssFiles[filePath], "utf8"));
                 }
             }
 
-            await Promise.all(pauseFor);
-            pauseFor.length = 0;
+            await Promise.all(promises);
+            promises.length = 0;
 
             const newFile = file.clone({ contents: false });
             newFile.contents = Buffer.from(html);
@@ -323,15 +104,12 @@ export = function gulpBundleHtml(options?: Options) {
         }
     }
 
-    // Override the default `stream.end()` method so that we can wait until all of the sources have been read in
-    // and then render all of the templates and emit their corresponding files
-    const superEnd = stream.end.bind(stream);
-    stream.end = () => {
+    function onEndStream() {
         const results: Promise<any>[] = [];
 
         for (const file of templates) {
             if (options.handlebars) {
-                let hbs: Handlebars;
+                let hbs: typeof _handlebars;
 
                 if (typeof options.handlebars === "boolean") {
                     hbs = _handlebars.create();
@@ -390,144 +168,4 @@ export = function gulpBundleHtml(options?: Options) {
         Promise.all(results)
             .then(() => superEnd());
     }
-
-    return stream;
-}
-
-function parseCssClassName(cssClassName: string, replacementNames?: MapLike<string>) {
-    cssClassName = cssClassName.trim();
-
-    if (replacementNames) {
-        if (cssClassName.startsWith("'") || cssClassName.startsWith("\"")) {
-            let className = cssClassName.slice(1, -1);
-
-            if (className in replacementNames) {
-                return `${cssClassName.slice(0, 1)}${replacementNames[className]}${cssClassName.slice(-1)}`;
-            } else {
-                return cssClassName;
-            }
-        } else {
-            if (cssClassName in replacementNames) {
-                return replacementNames[cssClassName];
-            } else {
-                return cssClassName;
-            }
-        }
-    } else {
-        if (cssClassName.startsWith("'") || cssClassName.startsWith("\"")) {
-            return cssClassName.slice(1, -1);
-        } else {
-            return cssClassName;
-        }
-    }
-}
-
-////////////////////////////////
-// Utility Functions
-
-function stringSearch(
-    value: string,
-    regex: RegExp,
-    matcher: (...substrings: string[]) => void,
-): void {
-    if (regex.global) {
-        let match: RegExpExecArray;
-        while (match = regex.exec(value)) {
-            matcher(...match);
-        }
-    } else {
-        let match: RegExpExecArray;
-        if (match = regex.exec(value)) {
-            matcher(...match);
-        }
-    }
-}
-
-function stringReplace(
-    value: string,
-    regex: RegExp,
-    replacer: (...substrings: string[]) => string,
-): string {
-    return value.replace(regex, replacer);
-}
-
-async function stringReplaceAsync(
-    value: string,
-    regex: RegExp,
-    replacer: (...substrings: string[]) => string | Promise<string>,
-    callback?: () => void,
-): Promise<string> {
-    if (regex.global) {
-        const partials: (string | Promise<string>)[] = [];
-
-        let prevIndex = 0;
-        let match: RegExpExecArray;
-        while (match = regex.exec(value)) {
-            // Push any string segments between the matches
-            const prev = value.slice(prevIndex, match.index);
-            partials.push(value.slice(prevIndex, match.index));
-            prevIndex = match.index + match[0].length;
-
-            // Replace the matched portion
-            partials.push(replacer(...match));
-        }
-
-        // Push the last little tidbit of string
-        partials.push(value.slice(prevIndex));
-
-        // Allow some additional work to be done (synchronously) now that all of the matches have been found
-        if (callback) {
-            callback();
-        }
-
-        const all = await Promise.all(partials);
-        return all.join("");
-    } else {
-        const partials: (string | Promise<string>)[] = [];
-
-        let prevIndex = 0;
-        let match: RegExpExecArray;
-        if (match = regex.exec(value)) {
-            // Push any string segments between the matches
-            const before = value.slice(prevIndex, match.index);
-            const after = value.slice(match.index + match[0].length);
-
-            // Replace the matched portion
-            value = before + (await replacer(...match)) + after;
-        }
-
-        // Allow some additional work to be done (synchronously) now that all of the matches have been found
-        if (callback) {
-            callback();
-        }
-
-        return value;
-    }
-}
-
-function* createStringGenerator() {
-    let accum = ["a"];
-
-    next: for (;;) {
-        yield accum.join("");
-
-        let last = accum.length;
-        --last;
-        while (accum[last] !== undefined) {
-            const c = nextChar(accum[last]);
-            if (c <= "z") {
-                accum[last] = c;
-                continue next;
-            } else {
-                accum[last] = "a";
-                --last;
-            }
-        }
-
-        accum.unshift("a");
-    }
-}
-
-function nextChar(c) {
-    return String.fromCharCode(c.charCodeAt(0) + 1);
 }
