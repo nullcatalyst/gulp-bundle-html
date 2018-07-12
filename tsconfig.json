@@ -8,5 +8,8 @@
         "lib": [
             "esnext"
         ]
-    }
+    },
+    "exclude": [
+        "test"
+    ]
 }
