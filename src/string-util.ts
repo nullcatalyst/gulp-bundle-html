@@ -6,7 +6,10 @@ export function stringSearch(
     if (regex.global) {
         let match: RegExpExecArray;
         while (match = regex.exec(value)) {
-            if (matcher(...match)) break;
+            if (matcher(...match)) {
+                regex.lastIndex = 0;
+                break;
+            }
         }
     } else {
         let match: RegExpExecArray;
