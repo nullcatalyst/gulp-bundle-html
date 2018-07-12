@@ -33,13 +33,12 @@ export async function bundleCssPrep(html: string, jsFiles: MapLike<string>, base
 }
 
 export function bundleCss(html: string, cssFiles: MapLike<string>, baseUrl: string): string {
-    
     return stringReplace(html, LINK_TAG_REGEX, (tagMatch: string, attributes: string) => {
         const outputAttributes: MapLike<string> = {};
         let contents: string = "";
 
         // If the <link> tag does not contain rel="stylesheet", then don't replace it
-        if (!isCss(attributes)) return;
+        if (!isCss(attributes)) return tagMatch;
 
         stringSearch(attributes, XML_ATTRIB_REGEX, (attribMatch: string, attrib: string, sQuoteValue: string, dQuoteValue: string) => {
             const value = (sQuoteValue || dQuoteValue || "").trim();
@@ -51,9 +50,6 @@ export function bundleCss(html: string, cssFiles: MapLike<string>, baseUrl: stri
                 outputAttributes[attrib] = (sQuoteValue || dQuoteValue); // allow undefined
             }
         });
-
-        // If the <link> tag does not contain rel="stylesheet", then don't replace it
-        if (!isCss) return tagMatch;
 
         if (contents) {
             return `<style${Object.entries(outputAttributes).map(createXmlAttrib).join("")}>${contents}</style>`;
@@ -73,7 +69,7 @@ export function combineCss(html: string, cssFiles: MapLike<string>, baseUrl: str
         let contents: string = "";
 
         // If the <link> tag does not contain rel="stylesheet", then don't replace it
-        if (!isCss(attributes)) return;
+        if (!isCss(attributes)) return tagMatch;
 
         stringSearch(attributes, XML_ATTRIB_REGEX, (attribMatch: string, attrib: string, sQuoteValue: string, dQuoteValue: string) => {
             const value = (sQuoteValue || dQuoteValue || "").trim();
@@ -85,9 +81,6 @@ export function combineCss(html: string, cssFiles: MapLike<string>, baseUrl: str
                 outputAttributes[attrib] = (sQuoteValue || dQuoteValue); // allow undefined
             }
         });
-
-        // If the <link> tag does not contain rel="stylesheet", then don't replace it
-        if (!isCss) return tagMatch;
 
         if (contents) {
             outputContents.push(contents);
