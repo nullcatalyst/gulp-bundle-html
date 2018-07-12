@@ -57,13 +57,10 @@ export async function stringReplaceAsync(
         const all = await Promise.all(partials);
         return all.join("");
     } else {
-        const partials: (string | Promise<string>)[] = [];
-
-        let prevIndex = 0;
         let match: RegExpExecArray;
         if (match = regex.exec(value)) {
             // Push any string segments between the matches
-            const before = value.slice(prevIndex, match.index);
+            const before = value.slice(0, match.index);
             const after = value.slice(match.index + match[0].length);
 
             // Replace the matched portion
@@ -79,8 +76,12 @@ export async function stringReplaceAsync(
     }
 }
 
+export function createXmlAttrib([key, value]: [string, string | undefined]) {
+    return value === undefined ? ` ${key}` : ` ${key}="${value}"`;
+}
+
 export function* createStringGenerator() {
-    let accum = ["a"];
+    let accum: string[] = ["a"];
 
     next: for (;;) {
         yield accum.join("");

@@ -3,7 +3,7 @@ import { MapLike } from "./map-like";
 import { stringSearch, createStringGenerator } from "./string-util";
 import { CSS_CLASS_REGEX, JS_CLASS_REGEX, HTML_CLASS_REGEX, WS_REGEX } from "./regex";
 
-export function minifyClassNames(html: string, cssFiles: MapLike<string>, jsFiles: MapLike<string>, whitelist: string[]): string {
+export function minifyCssClasses(html: string, cssFiles: MapLike<string>, jsFiles: MapLike<string>, whitelist: string[]): string {
     const usageCounts: MapLike<number> = {};
 
     function addCssClass(className: string) {

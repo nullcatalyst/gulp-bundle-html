@@ -8,9 +8,9 @@ import * as _handlebars from "handlebars";
 
 import { MapLike } from "./map-like";
 import { Options, PLUGIN_NAME, PLUGIN_DEFAULTS } from "./options";
-import { bundleCssPrep, bundleCss } from "./bundle-css";
-import { bundleJsPrep, bundleJs } from "./bundle-js";
-import { minifyClassNames } from "./minify-class";
+import { bundleCssPrep, bundleCss, combineCss } from "./bundle-css";
+import { bundleJsPrep, bundleJs, combineJs } from "./bundle-js";
+import { minifyCssClasses } from "./minify-css-classes";
 
 export = function gulpBundleHtml(options?: Options) {
     options = Object.assign({}, PLUGIN_DEFAULTS, options);
@@ -59,36 +59,44 @@ export = function gulpBundleHtml(options?: Options) {
             const jsFiles: MapLike<string> = {};
             const promises: Promise<any>[] = [];
 
-            if (options.bundleJs || options.minifyCssClasses) {
-                promises.push(bundleJsPrep(html, jsFiles, options.baseUrl || file.base));
-            }
-
             if (options.bundleCss || options.minifyCssClasses) {
                 promises.push(bundleCssPrep(html, cssFiles, options.baseUrl || file.base));
+            }
+
+            if (options.bundleJs || options.minifyCssClasses) {
+                promises.push(bundleJsPrep(html, jsFiles, options.baseUrl || file.base));
             }
 
             await Promise.all(promises);
             promises.length = 0;
 
             if (options.minifyCssClasses) {
-                html = minifyClassNames(html, cssFiles, jsFiles, options.classesWhitelist || []);
-            }
-
-            if (options.bundleJs) {
-                html = bundleJs(html, jsFiles, options.baseUrl || file.base);
-            } else if (options.minifyCssClasses) {
-                // Update the files with the minified source code
-                for (let filePath in jsFiles) {
-                    promises.push(fs.writeFile(filePath, jsFiles[filePath], "utf8"));
-                }
+                html = minifyCssClasses(html, cssFiles, jsFiles, options.classesWhitelist || []);
             }
 
             if (options.bundleCss) {
-                html = bundleCss(html, cssFiles, options.baseUrl || file.base);
+                if (options.combineCss) {
+                    html = combineCss(html, cssFiles, options.baseUrl || file.base);
+                } else {
+                    html = bundleCss(html, cssFiles, options.baseUrl || file.base);
+                }
             } else if (options.minifyCssClasses) {
                 // Update the files with the minified source code
                 for (let filePath in cssFiles) {
                     promises.push(fs.writeFile(filePath, cssFiles[filePath], "utf8"));
+                }
+            }
+
+            if (options.bundleJs) {
+                if (combineJs) {
+                    html = bundleJs(html, jsFiles, options.baseUrl || file.base);
+                } else {
+                    html = bundleCss(html, jsFiles, options.baseUrl || file.base);
+                }
+            } else if (options.minifyCssClasses) {
+                // Update the files with the minified source code
+                for (let filePath in jsFiles) {
+                    promises.push(fs.writeFile(filePath, jsFiles[filePath], "utf8"));
                 }
             }
 
