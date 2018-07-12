@@ -56,8 +56,8 @@ export function bundleJs(html: string, jsFiles: MapLike<string>, baseUrl: string
 
 const PLACEHOLDER = "<$SCRIPT$>";
 export function combineJs(html: string, jsFiles: MapLike<string>, baseUrl: string): string {
-    const outputContents: string[] = [];
     const outputAttributes: MapLike<string> = {};
+    const outputContents: string[] = [];
 
     let first: boolean = true;
     html = stringReplace(html, SCRIPT_TAG_REGEX, (tagMatch: string, selfClosingAttribs: string, xmlAttribs: string) => {

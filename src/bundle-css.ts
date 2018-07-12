@@ -9,25 +9,9 @@ export async function bundleCssPrep(html: string, jsFiles: MapLike<string>, base
 
     stringSearch(html, LINK_TAG_REGEX, (fullMatch: string, attribShort: string, attribLong: string) => {
         const attributes = attribShort || attribLong;
-        let isCss: boolean = false;
-
-        stringSearch(attributes, XML_ATTRIB_REGEX, (fullMatch: string, attrib: string, sQuoteValue: string, dQuoteValue: string) => {
-            const value = (sQuoteValue || dQuoteValue || "").trim();
-
-            if (attrib === "rel") {
-                if (value === "stylesheet") {
-                    isCss = true;
-                } else {
-                    isCss = false;
-                }
-
-                // Stop early
-                return true;
-            }
-        });
 
         // If the <link> tag does not contain rel="stylesheet", then don't replace it
-        if (!isCss) return;
+        if (!isCss(attributes)) return;
 
         stringSearch(attributes, XML_ATTRIB_REGEX, (fullMatch: string, attrib: string, sQuoteValue: string, dQuoteValue: string) => {
             if (attrib !== "href") {
@@ -49,25 +33,21 @@ export async function bundleCssPrep(html: string, jsFiles: MapLike<string>, base
 }
 
 export function bundleCss(html: string, cssFiles: MapLike<string>, baseUrl: string): string {
-    const outputAttributes: MapLike<string> = {};
-
+    
     return stringReplace(html, LINK_TAG_REGEX, (tagMatch: string, attributes: string) => {
-        let isCss: boolean = false;
+        const outputAttributes: MapLike<string> = {};
         let contents: string = "";
+
+        // If the <link> tag does not contain rel="stylesheet", then don't replace it
+        if (!isCss(attributes)) return;
 
         stringSearch(attributes, XML_ATTRIB_REGEX, (attribMatch: string, attrib: string, sQuoteValue: string, dQuoteValue: string) => {
             const value = (sQuoteValue || dQuoteValue || "").trim();
 
-            if (attrib === "rel") {
-                if (value === "stylesheet") {
-                    isCss = true;
-                } else {
-                    isCss = false;
-                }
-            } else if (attrib === "href") {
+            if (attrib === "href") {
                 const filePath = path.resolve(baseUrl, value.startsWith("/") ? value.slice(1) : value);
                 contents = cssFiles[filePath];
-            } else {
+            } else if (attrib !== "rel" && attrib !== "type") {
                 outputAttributes[attrib] = (sQuoteValue || dQuoteValue); // allow undefined
             }
         });
@@ -85,27 +65,23 @@ export function bundleCss(html: string, cssFiles: MapLike<string>, baseUrl: stri
 
 const PLACEHOLDER = "<$STYLE$>";
 export function combineCss(html: string, cssFiles: MapLike<string>, baseUrl: string): string {
-    const outputContents: string[] = [];
     const outputAttributes: MapLike<string> = {};
+    const outputContents: string[] = [];
 
     let first: boolean = true;
     html = stringReplace(html, LINK_TAG_REGEX, (tagMatch: string, attributes: string) => {
-        let isCss: boolean = false;
         let contents: string = "";
+
+        // If the <link> tag does not contain rel="stylesheet", then don't replace it
+        if (!isCss(attributes)) return;
 
         stringSearch(attributes, XML_ATTRIB_REGEX, (attribMatch: string, attrib: string, sQuoteValue: string, dQuoteValue: string) => {
             const value = (sQuoteValue || dQuoteValue || "").trim();
 
-            if (attrib === "rel") {
-                if (value === "stylesheet") {
-                    isCss = true;
-                } else {
-                    isCss = false;
-                }
-            } else if (attrib === "href") {
+            if (attrib === "href") {
                 const filePath = path.resolve(baseUrl, value.startsWith("/") ? value.slice(1) : value);
                 contents = cssFiles[filePath];
-            } else {
+            } else if (attrib !== "rel" && attrib !== "type") {
                 outputAttributes[attrib] = (sQuoteValue || dQuoteValue); // allow undefined
             }
         });
@@ -129,4 +105,25 @@ export function combineCss(html: string, cssFiles: MapLike<string>, baseUrl: str
 
     const output = `<style${Object.entries(outputAttributes).map(createXmlAttrib).join("")}>${outputContents.join("")}</style>`;
     return html.replace(PLACEHOLDER, output);
+}
+
+function isCss(attributes: string): boolean {
+    let isCss: boolean = false;
+
+    stringSearch(attributes, XML_ATTRIB_REGEX, (fullMatch: string, attrib: string, sQuoteValue: string, dQuoteValue: string) => {
+        const value = (sQuoteValue || dQuoteValue || "").trim();
+
+        if (attrib === "rel") {
+            if (value === "stylesheet") {
+                isCss = true;
+            } else {
+                isCss = false;
+            }
+
+            // Stop early
+            return true;
+        }
+    });
+
+    return isCss;
 }
