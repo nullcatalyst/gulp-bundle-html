@@ -1,12 +1,12 @@
 export function stringSearch(
     value: string,
     regex: RegExp,
-    matcher: (...substrings: string[]) => void,
+    matcher: (...substrings: string[]) => void | boolean,
 ): void {
     if (regex.global) {
         let match: RegExpExecArray;
         while (match = regex.exec(value)) {
-            matcher(...match);
+            if (matcher(...match)) break;
         }
     } else {
         let match: RegExpExecArray;

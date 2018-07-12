@@ -9,6 +9,25 @@ export async function bundleCssPrep(html: string, jsFiles: MapLike<string>, base
 
     stringSearch(html, LINK_TAG_REGEX, (fullMatch: string, attribShort: string, attribLong: string) => {
         const attributes = attribShort || attribLong;
+        let isCss: boolean = false;
+
+        stringSearch(attributes, XML_ATTRIB_REGEX, (fullMatch: string, attrib: string, sQuoteValue: string, dQuoteValue: string) => {
+            const value = (sQuoteValue || dQuoteValue || "").trim();
+
+            if (attrib === "rel") {
+                if (value === "stylesheet") {
+                    isCss = true;
+                } else {
+                    isCss = false;
+                }
+
+                // Stop early
+                return true;
+            }
+        });
+
+        // If the <link> tag does not contain rel="stylesheet", then don't replace it
+        if (!isCss) return;
 
         stringSearch(attributes, XML_ATTRIB_REGEX, (fullMatch: string, attrib: string, sQuoteValue: string, dQuoteValue: string) => {
             if (attrib !== "href") {
