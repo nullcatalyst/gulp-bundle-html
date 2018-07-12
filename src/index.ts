@@ -88,10 +88,10 @@ export = function gulpBundleHtml(options?: Options) {
             }
 
             if (options.bundleJs) {
-                if (combineJs) {
-                    html = bundleJs(html, jsFiles, options.baseUrl || file.base);
+                if (options.combineJs) {
+                    html = combineJs(html, jsFiles, options.baseUrl || file.base);
                 } else {
-                    html = bundleCss(html, jsFiles, options.baseUrl || file.base);
+                    html = bundleJs(html, jsFiles, options.baseUrl || file.base);
                 }
             } else if (options.minifyCssClasses) {
                 // Update the files with the minified source code
@@ -116,7 +116,13 @@ export = function gulpBundleHtml(options?: Options) {
         const results: Promise<any>[] = [];
 
         for (const file of templates) {
-            if (options.handlebars) {
+            const ext = path.extname(file.path);
+            const name = file.relative.slice(0, -ext.length);
+            const contents = (file.contents as Buffer).toString("utf8");
+
+            if (!options.handlebars) {
+                results.push(bundleOutputFile(file, name + ".html", () => contents, {}));
+            } else {
                 let hbs: typeof _handlebars;
 
                 if (typeof options.handlebars === "boolean") {
@@ -129,13 +135,11 @@ export = function gulpBundleHtml(options?: Options) {
                     hbs.registerPartial(key, value);
                 }
 
-                const template = hbs.compile((file.contents as Buffer).toString("utf8"));
+                const template = hbs.compile(contents);
                 const outputFile = (outputFileName: string, context: any, templateOptions?: Handlebars.RuntimeOptions) => {
                     results.push(bundleOutputFile(file, outputFileName, template, context, templateOptions));
                 };
 
-                const ext = path.extname(file.path);
-                const name = file.relative.slice(0, -ext.length);
                 if (options.renderTemplate) {
                     if (options.renderTemplate.length === 2) {
                         // If the `renderTemplate` function only takes 2 parameters,
@@ -174,6 +178,8 @@ export = function gulpBundleHtml(options?: Options) {
         }
 
         Promise.all(results)
-            .then(() => superEnd());
+            .then(() => {
+                superEnd()
+            });
     }
 }

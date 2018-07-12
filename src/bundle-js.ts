@@ -30,7 +30,8 @@ export async function bundleJsPrep(html: string, jsFiles: MapLike<string>, baseU
 }
 
 export function bundleJs(html: string, jsFiles: MapLike<string>, baseUrl: string): string {
-    return stringReplace(html, SCRIPT_TAG_REGEX, (tagMatch: string, attributes: string) => {
+    return stringReplace(html, SCRIPT_TAG_REGEX, (tagMatch: string, selfClosingAttribs: string, xmlAttribs: string) => {
+        const attributes = (selfClosingAttribs || xmlAttribs || "").trim();
         const outputAttributes: MapLike<string> = {};
         let contents: string = "";
 
@@ -59,7 +60,8 @@ export function combineJs(html: string, jsFiles: MapLike<string>, baseUrl: strin
     const outputAttributes: MapLike<string> = {};
 
     let first: boolean = true;
-    html = stringReplace(html, SCRIPT_TAG_REGEX, (tagMatch: string, attributes: string) => {
+    html = stringReplace(html, SCRIPT_TAG_REGEX, (tagMatch: string, selfClosingAttribs: string, xmlAttribs: string) => {
+        const attributes = (selfClosingAttribs || xmlAttribs || "").trim();
         let contents: string = "";
 
         stringSearch(attributes, XML_ATTRIB_REGEX, (attribMatch: string, attrib: string, sQuoteValue: string, dQuoteValue: string) => {
@@ -74,6 +76,8 @@ export function combineJs(html: string, jsFiles: MapLike<string>, baseUrl: strin
         });
 
         if (contents) {
+            outputContents.push(contents);
+
             if (first) {
                 first = false;
                 return PLACEHOLDER;

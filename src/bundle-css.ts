@@ -2,16 +2,16 @@ import * as path from "path";
 import { promises as fs } from "fs";
 import { MapLike } from "./map-like";
 import { stringSearch, stringReplace, createXmlAttrib } from "./string-util";
-import { SCRIPT_TAG_REGEX, XML_ATTRIB_REGEX, ABSOLUTE_URL_REGEX } from "./regex";
+import { LINK_TAG_REGEX, XML_ATTRIB_REGEX, ABSOLUTE_URL_REGEX } from "./regex";
 
 export async function bundleCssPrep(html: string, jsFiles: MapLike<string>, baseUrl: string) {
     const promises: Promise<void>[] = [];
 
-    stringSearch(html, SCRIPT_TAG_REGEX, (fullMatch: string, attribShort: string, attribLong: string) => {
+    stringSearch(html, LINK_TAG_REGEX, (fullMatch: string, attribShort: string, attribLong: string) => {
         const attributes = attribShort || attribLong;
 
         stringSearch(attributes, XML_ATTRIB_REGEX, (fullMatch: string, attrib: string, sQuoteValue: string, dQuoteValue: string) => {
-            if (attrib !== "src") {
+            if (attrib !== "href") {
                 return;
             }
 
@@ -32,7 +32,7 @@ export async function bundleCssPrep(html: string, jsFiles: MapLike<string>, base
 export function bundleCss(html: string, cssFiles: MapLike<string>, baseUrl: string): string {
     const outputAttributes: MapLike<string> = {};
 
-    return stringReplace(html, SCRIPT_TAG_REGEX, (tagMatch: string, attributes: string) => {
+    return stringReplace(html, LINK_TAG_REGEX, (tagMatch: string, attributes: string) => {
         let isCss: boolean = false;
         let contents: string = "";
 
@@ -40,7 +40,7 @@ export function bundleCss(html: string, cssFiles: MapLike<string>, baseUrl: stri
             const value = (sQuoteValue || dQuoteValue || "").trim();
 
             if (attrib === "rel") {
-                if (value !== "stylesheet") {
+                if (value === "stylesheet") {
                     isCss = true;
                 } else {
                     isCss = false;
@@ -70,7 +70,7 @@ export function combineCss(html: string, cssFiles: MapLike<string>, baseUrl: str
     const outputAttributes: MapLike<string> = {};
 
     let first: boolean = true;
-    html = stringReplace(html, SCRIPT_TAG_REGEX, (tagMatch: string, attributes: string) => {
+    html = stringReplace(html, LINK_TAG_REGEX, (tagMatch: string, attributes: string) => {
         let isCss: boolean = false;
         let contents: string = "";
 
@@ -78,7 +78,7 @@ export function combineCss(html: string, cssFiles: MapLike<string>, baseUrl: str
             const value = (sQuoteValue || dQuoteValue || "").trim();
 
             if (attrib === "rel") {
-                if (value !== "stylesheet") {
+                if (value === "stylesheet") {
                     isCss = true;
                 } else {
                     isCss = false;
@@ -95,6 +95,8 @@ export function combineCss(html: string, cssFiles: MapLike<string>, baseUrl: str
         if (!isCss) return tagMatch;
 
         if (contents) {
+            outputContents.push(contents);
+
             if (first) {
                 first = false;
                 return PLACEHOLDER;

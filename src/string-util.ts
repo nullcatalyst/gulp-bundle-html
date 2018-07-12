@@ -76,8 +76,8 @@ export async function stringReplaceAsync(
     }
 }
 
-export function createXmlAttrib([key, value]: [string, string | undefined]) {
-    return value === undefined ? ` ${key}` : ` ${key}="${value}"`;
+export function createXmlAttrib([key, value]: [string, string]) {
+    return value ? ` ${key}="${value}"` : ` ${key}`;
 }
 
 export function* createStringGenerator() {

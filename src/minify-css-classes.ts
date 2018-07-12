@@ -68,9 +68,9 @@ export function minifyCssClasses(html: string, cssFiles: MapLike<string>, jsFile
             .join(" ");
 
         if (sQuoteValue) {
-            return `'${classList}'`;
+            return `class='${classList}'`;
         } else {
-            return `"${classList}"`;
+            return `class="${classList}"`;
         }
     });
     html = html.replace(JS_CLASS_REGEX, (jsFuncMatch: string, param: string) => {
